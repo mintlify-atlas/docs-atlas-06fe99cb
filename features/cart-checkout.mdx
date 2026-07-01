@@ -1,0 +1,161 @@
+---
+title: "Cart and Checkout: Add Items and Pay with Stripe"
+sidebarTitle: "Cart & Checkout"
+description: "Learn how the cart state is managed in StoreContext, how totals are calculated, and how orders flow through Stripe's hosted checkout."
+---
+
+The cart and checkout flow takes a customer from browsing the menu all the way to a completed Stripe payment. Cart state is held in memory via React Context and mirrored in MongoDB so that logged-in users never lose their basket between sessions. When the customer is ready to pay, a Stripe Checkout session is created on the backend and the user is redirected to Stripe's hosted payment page.
+
+## How the Cart Works
+
+Cart state lives in `StoreContext` as a plain object called `cartItems`. Each key is a food item's `_id` and each value is the quantity currently in the basket:
+
+```js
+// Shape of cartItems
+{
+  "663a1f...": 2,   // 2 × Greek Salad
+  "663a20...": 1    // 1 × Margherita Pizza
+}
+```
+
+When a user logs in, `loadCartData` syncs the server-side cart to this local map:
+
+```jsx
+const loadCartData = async (token) => {
+  const response = await axios.post(url + "/api/cart/get", {}, { headers: { token } });
+  setCartItems(response.data.cartData);
+};
+```
+
+## addToCart and removeFromCart
+
+Both functions optimistically update local state first, then persist the change to the backend when a token is present.
+
+```jsx
+const addToCart = async (itemId) => {
+  if (!cartItems[itemId]) {
+    setCartItems((prev) => ({ ...prev, [itemId]: 1 }));
+  } else {
+    setCartItems((prev) => ({ ...prev, [itemId]: prev[itemId] + 1 }));
+  }
+  if (token) {
+    await axios.post(url + "/api/cart/add", { itemId }, { headers: { token } });
+  }
+};
+
+const removeFromCart = async (itemId) => {
+  setCartItems((prev) => ({ ...prev, [itemId]: prev[itemId] - 1 }));
+  if (token) {
+    await axios.post(url + "/api/cart/remove", { itemId }, { headers: { token } });
+  }
+};
+```
+
+<Note>
+  Cart changes made by a guest (no token) are kept in memory only for the current browser session and are not persisted to the database.
+</Note>
+
+## Cart Page
+
+The `/cart` route renders the `Cart` component, which lists every item where `cartItems[item._id] > 0`. For each row the component shows the item image, name, unit price, quantity, and line total. The **×** button calls `removeFromCart`.
+
+The **Cart Totals** panel at the bottom summarises:
+
+| Line         | Calculation                                      |
+| ------------ | ------------------------------------------------ |
+| Subtotal     | `getTotalCartAmount()` — sum of price × quantity |
+| Delivery Fee | Flat **Rs.2** (waived when the cart is empty)    |
+| **Total**    | Subtotal + Rs.2                                  |
+
+```jsx
+const getTotalCartAmount = () => {
+  let totalAmount = 0;
+  for (const item in cartItems) {
+    if (cartItems[item] > 0) {
+      let itemInfo = food_list.find((product) => product._id === item);
+      totalAmount += itemInfo.price * cartItems[item];
+    }
+  }
+  return totalAmount;
+};
+```
+
+Clicking **PROCEED TO CHECKOUT** navigates to `/order`. Unauthenticated users are redirected back to `/cart`.
+
+## PlaceOrder Page
+
+The `/order` route renders the `PlaceOrder` component. It presents a delivery address form alongside a final cost summary.
+
+<Accordion title="Delivery Address Fields">
+  | Field        | Input type | Placeholder       |
+  | ------------ | ---------- | ----------------- |
+  | `firstName`  | text       | First Name        |
+  | `lastName`   | text       | Last Name         |
+  | `email`      | email      | Email address     |
+  | `street`     | text       | Street            |
+  | `city`       | text       | City              |
+  | `state`      | text       | State             |
+  | `zipcode`    | text       | Zip code          |
+  | `country`    | text       | Country           |
+  | `phone`      | text       | Phone             |
+
+  All fields are `required`.
+</Accordion>
+
+Clicking **PROCEED TO PAYMENT** submits the form and calls the backend to create a Stripe session.
+
+## Stripe Payment Flow
+
+<Steps>
+  <Step title="POST /api/order/place">
+    The frontend posts the full order payload — `items`, `address`, and `amount` — along with the auth token.
+
+    The backend:
+    1. Saves a new `Order` document to MongoDB with `payment: false`
+    2. Clears the user's `cartData` in the `User` document
+    3. Builds a Stripe `line_items` array from the ordered items plus a **Delivery Charges** line item
+    4. Creates a Stripe Checkout session and returns `session_url`
+  </Step>
+  <Step title="Redirect to Stripe">
+    The frontend replaces the current page with the Stripe-hosted checkout URL:
+
+    ```jsx
+    window.location.replace(session_url);
+    ```
+
+    Using `replace` removes the order page from browser history so the customer cannot navigate back to it after paying.
+  </Step>
+  <Step title="Stripe redirects back">
+    After the customer completes or cancels payment, Stripe redirects to:
+
+    ```
+    /verify?success=true&orderId=<id>    ← payment completed
+    /verify?success=false&orderId=<id>   ← payment cancelled
+    ```
+  </Step>
+  <Step title="POST /api/order/verify">
+    The `Verify` page immediately calls `POST /api/order/verify` with `{ success, orderId }`.
+
+    - **success = "true"** → sets `payment: true` on the order, then redirects to `/myorders`
+    - **success = "false"** → deletes the order document, then redirects to `/`
+  </Step>
+</Steps>
+
+<Note>
+  All Stripe line items use the **INR** currency, as set in `orderController.js`. Prices are passed to Stripe in paise (`price * 100`).
+</Note>
+
+## Delivery Fee Line Item
+
+The flat Rs.2 delivery charge is appended to the Stripe `line_items` array on the backend so it appears as a named line on the Stripe-hosted receipt:
+
+```js
+line_items.push({
+  price_data: {
+    currency: "inr",
+    product_data: { name: "Delivery Charges" },
+    unit_amount: 2 * 100   // 200 paise = Rs.2
+  },
+  quantity: 1
+});
+```

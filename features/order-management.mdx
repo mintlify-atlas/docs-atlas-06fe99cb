@@ -1,0 +1,160 @@
+---
+title: "Order Tracking: Monitor Your Delivery Status"
+sidebarTitle: "Order Tracking"
+description: "Understand the full order lifecycle from placement to delivery, how customers track their orders, and how admins update order statuses."
+---
+
+Every order placed through the app moves through a defined lifecycle — from initial processing to final delivery. Customers can monitor this journey from their **My Orders** page, while restaurant admins drive each status transition from the admin dashboard. The Verify page bridges the gap between Stripe's payment redirect and the order being confirmed in the database.
+
+## Order Lifecycle
+
+Orders progress through three statuses, stored as plain strings in MongoDB:
+
+<Steps>
+  <Step title="Food Processing">
+    The default status assigned when an order is first created. The kitchen has received the order and is preparing the food.
+  </Step>
+  <Step title="Out for delivery">
+    The order has been dispatched and is on its way to the customer's address.
+  </Step>
+  <Step title="Delivered">
+    The order has been successfully delivered. This is the terminal state.
+  </Step>
+</Steps>
+
+## My Orders Page (Customer)
+
+The `/myorders` route renders the `MyOrders` component. On mount (and whenever the `token` value changes), it calls `POST /api/order/userorders` — with the JWT token in the request header — to fetch all orders belonging to the logged-in user.
+
+```jsx
+const fetchOrders = async () => {
+  const response = await axios.post(
+    url + "/api/order/userorders",
+    {},
+    { headers: { token } }
+  );
+  setData(response.data.data);
+};
+
+useEffect(() => {
+  if (token) {
+    fetchOrders();
+  }
+}, [token]);
+```
+
+Each order row displays:
+
+| Field          | Source                              |
+| -------------- | ----------------------------------- |
+| Item list      | `item.name + " x " + item.quantity` for every item, comma-separated |
+| Total amount   | `Rs.<order.amount>.00`              |
+| Item count     | `Items: <order.items.length>`       |
+| Status badge   | `order.status` — one of the three lifecycle values |
+
+A **Track Order** button re-calls `fetchOrders` to pull the latest status on demand.
+
+<Tip>
+  The My Orders page re-fetches automatically whenever the user navigates to it (the `useEffect` runs on token change). For live polling, users can also click the **Track Order** button to refresh the status immediately.
+</Tip>
+
+## Order Data Model
+
+Order documents in MongoDB follow this Mongoose schema (from `backend/models/orderModel.js`):
+
+| Field     | Type      | Required | Default            |
+| --------- | --------- | -------- | ------------------ |
+| `userId`  | `String`  | ✅        | —                  |
+| `items`   | `Array`   | ✅        | —                  |
+| `amount`  | `Number`  | ✅        | —                  |
+| `address` | `Object`  | ✅        | —                  |
+| `status`  | `String`  | ❌        | `"Food Processing"` |
+| `date`    | `Date`    | ❌        | `Date.now()`       |
+| `payment` | `Boolean` | ❌        | `false`            |
+
+### Example Order Object
+
+```json
+{
+  "_id": "664b3f2a9c1e2a0012abcdef",
+  "userId": "663e1a...",
+  "items": [
+    {
+      "_id": "663a1f...",
+      "name": "Greek Salad",
+      "price": 12,
+      "category": "Salad",
+      "image": "1713578089412food_1.png",
+      "quantity": 2
+    },
+    {
+      "_id": "663a20...",
+      "name": "Veg Roll",
+      "price": 8,
+      "category": "Rolls",
+      "image": "1713578089413food_2.png",
+      "quantity": 1
+    }
+  ],
+  "amount": 34,
+  "address": {
+    "firstName": "Priya",
+    "lastName": "Sharma",
+    "email": "priya@example.com",
+    "street": "12 MG Road",
+    "city": "Bengaluru",
+    "state": "Karnataka",
+    "zipcode": "560001",
+    "country": "India",
+    "phone": "9876543210"
+  },
+  "status": "Food Processing",
+  "date": "2024-05-20T10:15:00.000Z",
+  "payment": true
+}
+```
+
+## Admin Order Management
+
+The admin `/orders` page calls `GET /api/order/list` on mount to fetch every order across all users. Each order card shows:
+
+- Ordered items (name × quantity, comma-separated)
+- Customer full name (`address.firstName + " " + address.lastName`)
+- Delivery address (street, city, state, country, zipcode)
+- Customer phone number
+- Item count
+- Order total
+
+A status `<select>` dropdown lets the admin transition an order to any of the three lifecycle states. Changing the dropdown fires:
+
+```jsx
+const statusHandler = async (event, orderId) => {
+  const response = await axios.post(url + "/api/order/status", {
+    orderId,
+    status: event.target.value
+  });
+  if (response.data.success) {
+    await fetchAllOrders();
+  }
+};
+```
+
+This calls `POST /api/order/status` on the backend, which runs `findByIdAndUpdate` to persist the new status, then the admin page refreshes its order list.
+
+## Verify Page (Payment Callback)
+
+After Stripe redirects the customer back to the app, the `/verify` route handles the result. The page reads `success` and `orderId` from the URL query string and immediately calls `POST /api/order/verify`:
+
+```jsx
+const verifyPayment = async () => {
+  const response = await axios.post(url + "/api/order/verify", { success, orderId });
+  if (response.data.success) {
+    navigate("/myorders");
+  } else {
+    navigate("/");
+  }
+};
+```
+
+- **Payment confirmed** (`success=true`) → the order's `payment` field is set to `true` and the user is sent to `/myorders`
+- **Payment cancelled** (`success=false`) → the order document is deleted from MongoDB and the user is redirected to the home page

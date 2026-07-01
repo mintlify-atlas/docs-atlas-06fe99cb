@@ -1,0 +1,141 @@
+---
+title: "Connect Food Delivery App to MongoDB"
+sidebarTitle: "Database"
+description: "Learn how to configure MongoDB for the Food Delivery App, covering both local MongoDB Community and MongoDB Atlas, plus a reference for all Mongoose data models."
+---
+
+The Food Delivery App uses [MongoDB](https://www.mongodb.com/) as its primary data store, accessed through the [Mongoose](https://mongoosejs.com/) ODM. All three data collections — food items, users, and orders — are defined as Mongoose schemas in the `backend/models/` directory. Before the server can handle any requests, a valid `MONGODB_URI` must be present in `backend/.env` and the database must be reachable. If the connection fails on startup, the process exits immediately to prevent the app from running in a broken state.
+
+## How the Connection Works
+
+Database initialisation lives in a single file, `backend/config/db.js`. The `connectDB` function is called once in `server.js` before any routes are registered:
+
+```js backend/config/db.js
+import mongoose from "mongoose";
+
+export const connectDB = async () => {
+    try {
+        await mongoose.connect(process.env.MONGODB_URI);
+        console.log("Database Connected Successfully!!!");
+    } catch (error) {
+        console.error("Database connection failed:", error.message);
+        process.exit(1);
+    }
+};
+```
+
+The connection string is read from `process.env.MONGODB_URI`, which is populated by `dotenv` when the server starts. There is no explicit database name in the `mongoose.connect()` call — the database name is embedded in the URI itself (e.g. `/food-delivery` at the end of the Atlas connection string).
+
+## Setting Up Your Database
+
+<Tabs>
+  <Tab title="Local MongoDB">
+    Use a local MongoDB Community Server instance during development when you do not need cloud access.
+
+    **1. Install MongoDB Community Server**
+
+    Download and install MongoDB Community Edition for your operating system from the [MongoDB download page](https://www.mongodb.com/try/download/community).
+
+    **2. Start the mongod daemon**
+
+    ```bash
+    mongod --dbpath /your/data/directory
+    ```
+
+    On macOS with Homebrew you can instead run:
+
+    ```bash
+    brew services start mongodb-community
+    ```
+
+    **3. Set your connection string**
+
+    Add the following to `backend/.env`:
+
+    ```bash backend/.env
+    MONGODB_URI=mongodb://localhost:27017/food-delivery
+    ```
+
+    MongoDB will automatically create the `food-delivery` database the first time a document is inserted — no manual database creation is required.
+  </Tab>
+  <Tab title="MongoDB Atlas">
+    MongoDB Atlas provides a fully managed cloud database with a free shared tier (M0) that is well suited for development and small production workloads.
+
+    **1. Create a free Atlas account and cluster**
+
+    Sign up at [cloud.mongodb.com](https://cloud.mongodb.com), create a new project, and build a free **M0** cluster in the region closest to your server.
+
+    **2. Create a database user**
+
+    In your cluster, go to **Database Access → Add New Database User**. Choose **Password** authentication and note the username and password you set — you will need them in the next step.
+
+    **3. Allow network access**
+
+    Go to **Network Access → Add IP Address**. For development, you can allow access from anywhere (`0.0.0.0/0`). For production, restrict this to your server's IP address.
+
+    **4. Get your connection string**
+
+    Click **Connect → Drivers**, select **Node.js**, and copy the connection string. It will look like:
+
+    ```
+    mongodb+srv://<user>:<password>@cluster0.xxxxx.mongodb.net/?retryWrites=true&w=majority
+    ```
+
+    **5. Set your connection string**
+
+    Replace `<user>` and `<password>` with your database user credentials, add the database name, and paste it into `backend/.env`:
+
+    ```bash backend/.env
+    MONGODB_URI=mongodb+srv://myuser:mypassword@cluster0.xxxxx.mongodb.net/food-delivery
+    ```
+
+    <Tip>
+      MongoDB Atlas's free M0 tier includes 512 MB of storage and is sufficient for running the Food Delivery App in development. Upgrade to an M10 or higher paid cluster when moving to production.
+    </Tip>
+  </Tab>
+</Tabs>
+
+## Data Models
+
+The app defines three Mongoose collections. All models use the pattern `mongoose.models.<name> || mongoose.model(...)` to avoid re-registering a model if the module is imported multiple times.
+
+### `food` Collection
+
+Stores the menu items displayed in the storefront and managed through the admin dashboard.
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `name` | String | ✅ | Display name of the food item |
+| `description` | String | ✅ | Short description shown on the menu card |
+| `price` | Number | ✅ | Price in INR; multiplied by 100 when passed to Stripe |
+| `image` | String | ✅ | Filename of the uploaded image stored in `backend/uploads/` |
+| `category` | String | ✅ | Menu category (e.g. "Salad", "Rolls", "Desserts") |
+
+### `user` Collection
+
+Stores registered customer accounts and their active shopping cart state.
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `name` | String | ✅ | Full name of the user |
+| `email` | String | ✅ | Must be unique across all users |
+| `password` | String | ✅ | Bcrypt-hashed password |
+| `cartData` | Object | — | Map of `{ foodId: quantity }`. Defaults to `{}` |
+
+<Note>
+  The user schema sets `{ minimize: false }` as a schema option. By default, Mongoose removes empty objects from documents before saving them to MongoDB. Setting `minimize: false` disables this behaviour, ensuring that an empty `cartData` object (`{}`) is preserved in the database rather than being stripped out. This is important because the frontend reads `cartData` on login to restore the user's cart state.
+</Note>
+
+### `order` Collection
+
+Stores every order placed through the checkout flow, including its payment and fulfilment status.
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `userId` | String | ✅ | MongoDB ObjectId of the user who placed the order |
+| `items` | Array | ✅ | Array of cart item objects `{ name, price, quantity, ... }` |
+| `amount` | Number | ✅ | Total order value in INR |
+| `address` | Object | ✅ | Delivery address fields submitted at checkout |
+| `status` | String | — | Fulfilment status. Defaults to `"Food Processing"` |
+| `date` | Date | — | Order creation timestamp. Defaults to `Date.now()` |
+| `payment` | Boolean | — | `true` once Stripe confirms payment. Defaults to `false` |

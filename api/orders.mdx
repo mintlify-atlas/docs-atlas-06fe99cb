@@ -1,0 +1,329 @@
+---
+title: "Orders API: Place, Verify, and Track Orders"
+sidebarTitle: "Orders"
+description: "Endpoints to place orders via Stripe Checkout, verify payment, fetch user order history, and manage order status through the admin panel."
+---
+
+The Orders API handles the full order lifecycle from placement through payment verification and status updates. Orders are created when a customer checks out, linked to a Stripe Checkout session, and tracked through three sequential statuses: **Food Processing → Out for delivery → Delivered**. The order document also carries a `payment` boolean that is set to `true` only after a successful Stripe payment callback.
+
+---
+
+## POST /api/order/place
+
+Places a new order for the authenticated user. The controller saves the order to MongoDB, clears the user's cart, builds a Stripe Checkout session from the supplied items plus a fixed ₹2 delivery charge, and returns the hosted Stripe session URL. The client should redirect the user to that URL to complete payment.
+
+<Note>
+  The `amount` field in the request body should equal the sum of `(item.price × item.quantity)` for all items **plus** ₹2 for the delivery charge that Stripe will also add as a separate line item.
+</Note>
+
+### Request Headers
+
+<ParamField header="token" type="string" required>
+  A valid JWT token issued at login. `userId` is injected by the auth middleware.
+</ParamField>
+
+### Request Body
+
+<ParamField body="items" type="array" required>
+  Array of cart items to order. Each element must include:
+
+  <Expandable title="Item object">
+    <ParamField body="name" type="string" required>
+      Name of the food item (used as the Stripe line item product name).
+    </ParamField>
+    <ParamField body="price" type="number" required>
+      Price per unit in INR. Stripe receives this as `price * 100` (paise).
+    </ParamField>
+    <ParamField body="quantity" type="number" required>
+      Number of units ordered.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="amount" type="number" required>
+  Total order amount in INR, including the ₹2 delivery fee.
+</ParamField>
+
+<ParamField body="address" type="object" required>
+  Delivery address for the order.
+
+  <Expandable title="Address object">
+    <ParamField body="firstName" type="string" required>Recipient's first name.</ParamField>
+    <ParamField body="lastName" type="string" required>Recipient's last name.</ParamField>
+    <ParamField body="email" type="string" required>Contact email address.</ParamField>
+    <ParamField body="street" type="string" required>Street address line.</ParamField>
+    <ParamField body="city" type="string" required>City name.</ParamField>
+    <ParamField body="state" type="string" required>State or region.</ParamField>
+    <ParamField body="zipcode" type="string" required>Postal / ZIP code.</ParamField>
+    <ParamField body="country" type="string" required>Country name.</ParamField>
+    <ParamField body="phone" type="string" required>Contact phone number.</ParamField>
+  </Expandable>
+</ParamField>
+
+### Response
+
+<ResponseField name="success" type="boolean">
+  `true` when the order was created and the Stripe session was generated.
+</ResponseField>
+
+<ResponseField name="session_url" type="string">
+  The full Stripe-hosted Checkout URL. Redirect the user here to complete payment (e.g., `"https://checkout.stripe.com/c/pay/cs_test_..."`).
+</ResponseField>
+
+```json
+{
+  "success": true,
+  "session_url": "https://checkout.stripe.com/c/pay/cs_test_a1B2c3D4e5F6..."
+}
+```
+
+### Example
+
+```bash
+curl -X POST http://localhost:4000/api/order/place \
+  -H "Content-Type: application/json" \
+  -H "token: <your_jwt_token>" \
+  -d '{
+    "items": [
+      { "name": "Caesar Salad", "price": 199, "quantity": 2 },
+      { "name": "Garlic Bread",  "price": 89,  "quantity": 1 }
+    ],
+    "amount": 489,
+    "address": {
+      "firstName": "Rohan",
+      "lastName": "Sharma",
+      "email": "rohan@example.com",
+      "street": "12 MG Road",
+      "city": "Bengaluru",
+      "state": "Karnataka",
+      "zipcode": "560001",
+      "country": "India",
+      "phone": "9876543210"
+    }
+  }'
+```
+
+---
+
+## POST /api/order/verify
+
+Called by the frontend after Stripe redirects back to the application. Stripe appends `success=true` or `success=false` plus the `orderId` to the redirect URL; the frontend extracts these and posts them here.
+
+- If `success` is `"true"` — the order's `payment` field is set to `true`.
+- If `success` is `"false"` — the order document is permanently deleted from MongoDB.
+
+### Request Body
+
+<ParamField body="orderId" type="string" required>
+  The MongoDB `_id` of the order to verify, returned by `/api/order/place`.
+</ParamField>
+
+<ParamField body="success" type="string" required>
+  String `"true"` (payment succeeded) or `"false"` (payment cancelled or failed). Note this is a **string**, not a boolean, as it comes directly from the Stripe redirect query parameter.
+</ParamField>
+
+### Response
+
+<ResponseField name="success" type="boolean">
+  `true` when payment was confirmed; `false` when the order was not paid.
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  `"Paid"` on successful payment, `"Not Paid"` when payment failed or was cancelled.
+</ResponseField>
+
+```json
+{ "success": true, "message": "Paid" }
+```
+
+```json
+{ "success": false, "message": "Not Paid" }
+```
+
+### Example
+
+```bash
+curl -X POST http://localhost:4000/api/order/verify \
+  -H "Content-Type: application/json" \
+  -d '{ "orderId": "6641b5a2e4b0c123456789ff", "success": "true" }'
+```
+
+---
+
+## POST /api/order/userorders
+
+Fetches all orders belonging to the authenticated user. Used by the "My Orders" page on the frontend to display order history and current status.
+
+### Request Headers
+
+<ParamField header="token" type="string" required>
+  A valid JWT token. `userId` is injected by the auth middleware.
+</ParamField>
+
+### Request Body
+
+Send an empty JSON object.
+
+```json
+{}
+```
+
+### Response
+
+<ResponseField name="success" type="boolean">
+  `true` when orders were fetched successfully.
+</ResponseField>
+
+<ResponseField name="data" type="array">
+  Array of order documents for the authenticated user.
+
+  <Expandable title="Order object">
+    <ResponseField name="_id" type="string">MongoDB ObjectId of the order.</ResponseField>
+    <ResponseField name="userId" type="string">ID of the user who placed the order.</ResponseField>
+    <ResponseField name="items" type="array">Array of ordered items, each with `name`, `price`, and `quantity`.</ResponseField>
+    <ResponseField name="amount" type="number">Total order amount in INR including delivery.</ResponseField>
+    <ResponseField name="address" type="object">Delivery address object.</ResponseField>
+    <ResponseField name="status" type="string">
+      Current order status. One of `"Food Processing"`, `"Out for delivery"`, or `"Delivered"`. Defaults to `"Food Processing"` on creation.
+    </ResponseField>
+    <ResponseField name="date" type="string">ISO 8601 timestamp when the order was created.</ResponseField>
+    <ResponseField name="payment" type="boolean">`true` if Stripe payment was confirmed, `false` otherwise.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "_id": "6641b5a2e4b0c123456789ff",
+      "userId": "6640a1b2c3d4e5f678901234",
+      "items": [
+        { "name": "Caesar Salad", "price": 199, "quantity": 2 }
+      ],
+      "amount": 400,
+      "address": {
+        "firstName": "Rohan",
+        "lastName": "Sharma",
+        "email": "rohan@example.com",
+        "street": "12 MG Road",
+        "city": "Bengaluru",
+        "state": "Karnataka",
+        "zipcode": "560001",
+        "country": "India",
+        "phone": "9876543210"
+      },
+      "status": "Food Processing",
+      "date": "2024-05-12T08:00:00.000Z",
+      "payment": true
+    }
+  ]
+}
+```
+
+### Example
+
+```bash
+curl -X POST http://localhost:4000/api/order/userorders \
+  -H "Content-Type: application/json" \
+  -H "token: <your_jwt_token>" \
+  -d '{}'
+```
+
+---
+
+## GET /api/order/list
+
+Returns every order in the system, regardless of user. Intended for the admin panel to display and manage all incoming orders.
+
+<Warning>
+  This endpoint has **no authentication**. It exposes all customer orders — including names, addresses, and phone numbers. Add admin authentication middleware before deploying to production.
+</Warning>
+
+### Response
+
+<ResponseField name="success" type="boolean">
+  `true` when the order list was fetched successfully.
+</ResponseField>
+
+<ResponseField name="data" type="array">
+  Array of all order documents across all users. Each object has the same fields as described in [POST /api/order/userorders](#post-apiorderuserorders).
+</ResponseField>
+
+```json
+{
+  "success": true,
+  "data": [ /* all order objects */ ]
+}
+```
+
+### Example
+
+```bash
+curl -X GET http://localhost:4000/api/order/list
+```
+
+---
+
+## POST /api/order/status
+
+Updates the status field of a specific order. Used by the admin panel to progress an order through the delivery pipeline.
+
+<Warning>
+  This endpoint has **no authentication**. Any caller can change the status of any order. Restrict access to authenticated admin users before going to production.
+</Warning>
+
+### Request Body
+
+<ParamField body="orderId" type="string" required>
+  The MongoDB `_id` of the order to update.
+</ParamField>
+
+<ParamField body="status" type="string" required>
+  The new status value. Should be one of:
+  - `"Food Processing"` — order received, kitchen is preparing
+  - `"Out for delivery"` — order dispatched to the customer
+  - `"Delivered"` — order successfully delivered
+</ParamField>
+
+### Response
+
+<ResponseField name="success" type="boolean">
+  `true` when the status was updated successfully.
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  `"Status Updated"` on success, `"Error"` on failure.
+</ResponseField>
+
+```json
+{ "success": true, "message": "Status Updated" }
+```
+
+### Example
+
+```bash
+curl -X POST http://localhost:4000/api/order/status \
+  -H "Content-Type: application/json" \
+  -d '{ "orderId": "6641b5a2e4b0c123456789ff", "status": "Out for delivery" }'
+```
+
+---
+
+## Order Status Lifecycle
+
+Every order begins in the **Food Processing** state the moment it is created. An admin uses the `/api/order/status` endpoint to advance it through the pipeline. The three states flow in sequence:
+
+```
+Food Processing  ──▶  Out for delivery  ──▶  Delivered
+```
+
+| Stage | Meaning |
+|---|---|
+| **Food Processing** | Default state. The kitchen has received the order and is preparing it. |
+| **Out for delivery** | The order has been packed and dispatched to the delivery agent. |
+| **Delivered** | The order has been successfully handed to the customer. |
+
+<Tip>
+  Status transitions are not enforced server-side — the API accepts any string value. Follow the three-stage sequence above in your admin UI to keep order tracking consistent.
+</Tip>

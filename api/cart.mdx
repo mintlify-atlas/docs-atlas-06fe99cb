@@ -1,0 +1,158 @@
+---
+title: "Cart API: Manage User Cart Items"
+sidebarTitle: "Cart"
+description: "Server-side cart endpoints to add, remove, and retrieve a user's cart — all protected by JWT authentication via the token header."
+---
+
+The Cart API persists each user's cart server-side inside their MongoDB user document. All three endpoints require authentication — pass the JWT token in the `token` request header. The cart is stored as a flat map on the user document under the key `cartData`, where each key is a food item's `_id` and the value is its integer quantity:
+
+```json
+{
+  "cartData": {
+    "6641a3f2e4b0c123456789ab": 2,
+    "6641a3f2e4b0c123456789cd": 1
+  }
+}
+```
+
+<Note>
+  You do **not** need to send `userId` in any request body. The auth middleware automatically decodes it from your JWT token and injects it into the request before the controller runs.
+</Note>
+
+---
+
+## POST /api/cart/add
+
+Adds one unit of a food item to the authenticated user's cart. If the item is not yet in the cart, it is initialized with a quantity of `1`. If it already exists, the quantity is incremented by `1`.
+
+### Request Headers
+
+<ParamField header="token" type="string" required>
+  A valid JWT token issued at login. The middleware decodes this to extract `userId`.
+</ParamField>
+
+### Request Body
+
+<ParamField body="itemId" type="string" required>
+  The MongoDB `_id` of the food item to add (e.g., `"6641a3f2e4b0c123456789ab"`).
+</ParamField>
+
+### Response
+
+<ResponseField name="success" type="boolean">
+  `true` when the cart was updated successfully.
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  `"Added to cart"` on success, `"Error"` on failure.
+</ResponseField>
+
+```json
+{ "success": true, "message": "Added to cart" }
+```
+
+### Example
+
+```bash
+curl -X POST http://localhost:4000/api/cart/add \
+  -H "Content-Type: application/json" \
+  -H "token: <your_jwt_token>" \
+  -d '{ "itemId": "6641a3f2e4b0c123456789ab" }'
+```
+
+---
+
+## POST /api/cart/remove
+
+Removes one unit of a food item from the authenticated user's cart. The quantity is decremented by `1` only if the current quantity is greater than `0`. This prevents the quantity from going negative.
+
+### Request Headers
+
+<ParamField header="token" type="string" required>
+  A valid JWT token issued at login.
+</ParamField>
+
+### Request Body
+
+<ParamField body="itemId" type="string" required>
+  The MongoDB `_id` of the food item to decrement.
+</ParamField>
+
+### Response
+
+<ResponseField name="success" type="boolean">
+  `true` when the cart was updated successfully.
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  `"Removed from cart"` on success, `"Error"` on failure.
+</ResponseField>
+
+```json
+{ "success": true, "message": "Removed from cart" }
+```
+
+### Example
+
+```bash
+curl -X POST http://localhost:4000/api/cart/remove \
+  -H "Content-Type: application/json" \
+  -H "token: <your_jwt_token>" \
+  -d '{ "itemId": "6641a3f2e4b0c123456789ab" }'
+```
+
+---
+
+## POST /api/cart/get
+
+Retrieves the full cart map for the authenticated user. The frontend uses this response to re-hydrate the cart state on page load or after a refresh.
+
+### Request Headers
+
+<ParamField header="token" type="string" required>
+  A valid JWT token issued at login.
+</ParamField>
+
+### Request Body
+
+Send an empty JSON object — `userId` is provided by the auth middleware.
+
+```json
+{}
+```
+
+### Response
+
+<ResponseField name="success" type="boolean">
+  `true` when the cart data was fetched successfully.
+</ResponseField>
+
+<ResponseField name="cartData" type="object">
+  A key-value map of food item IDs to their quantities. Each key is a MongoDB `_id` string and each value is a non-negative integer representing how many units are in the cart. Items with a quantity of `0` may still appear in the map after being decremented.
+
+  ```json
+  {
+    "6641a3f2e4b0c123456789ab": 2,
+    "6641a3f2e4b0c123456789cd": 1
+  }
+  ```
+</ResponseField>
+
+```json
+{
+  "success": true,
+  "cartData": {
+    "6641a3f2e4b0c123456789ab": 2,
+    "6641a3f2e4b0c123456789cd": 1
+  }
+}
+```
+
+### Example
+
+```bash
+curl -X POST http://localhost:4000/api/cart/get \
+  -H "Content-Type: application/json" \
+  -H "token: <your_jwt_token>" \
+  -d '{}'
+```

@@ -1,0 +1,168 @@
+---
+title: "Food API: Add, List, and Remove Menu Items"
+sidebarTitle: "Food"
+description: "REST endpoints for managing the restaurant menu — add items with image uploads, list the full catalog, and remove items by ID."
+---
+
+The Food API provides three endpoints for managing the restaurant's menu. These are used by both the admin dashboard (to add/remove items) and the customer frontend (to list items). Image files are handled automatically by Multer and stored on the server's local filesystem under `backend/uploads/`.
+
+---
+
+## POST /api/food/add
+
+Adds a new food item to the menu. This is a `multipart/form-data` request because it includes an image file upload. Multer stores the image in the `uploads/` directory using the filename pattern `<timestamp><originalname>` — only the resulting filename (not the full path) is saved in MongoDB.
+
+<Note>
+  This endpoint does not require authentication in the current implementation. Restrict access to admin roles before deploying to production.
+</Note>
+
+**Content-Type:** `multipart/form-data`
+
+### Request Body
+
+<ParamField body="name" type="string" required>
+  The display name of the food item (e.g., `"Caesar Salad"`).
+</ParamField>
+
+<ParamField body="description" type="string" required>
+  A short description of the food item shown on the menu card.
+</ParamField>
+
+<ParamField body="price" type="number" required>
+  Price of the item in INR (e.g., `199`).
+</ParamField>
+
+<ParamField body="category" type="string" required>
+  Menu category the item belongs to. Must be one of:
+  `Salad`, `Rolls`, `Deserts`, `Sandwich`, `Cake`, `Pure Veg`, `Pasta`, `Noodles`.
+</ParamField>
+
+<ParamField body="image" type="file" required>
+  The food item image file. Accepted via the `image` form field. Stored in `backend/uploads/` as `<timestamp><originalname>` (e.g., `1716300000000burger.png`).
+</ParamField>
+
+### Response
+
+<ResponseField name="success" type="boolean">
+  `true` when the item was saved successfully, `false` on error.
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  `"Food Added"` on success, `"Error"` on failure.
+</ResponseField>
+
+```json
+{ "success": true, "message": "Food Added" }
+```
+
+### Example
+
+```bash
+curl -X POST http://localhost:4000/api/food/add \
+  -F "name=Caesar Salad" \
+  -F "description=Fresh romaine lettuce with Caesar dressing and croutons" \
+  -F "price=199" \
+  -F "category=Salad" \
+  -F "image=@/path/to/caesar.jpg"
+```
+
+---
+
+## GET /api/food/list
+
+Returns all food items currently in the database. This is the primary data source for the customer-facing menu page. No request parameters are required.
+
+<Note>
+  Food item images are **not** embedded in the response. The `image` field contains only the stored filename (e.g., `"1716300000000caesar.jpg"`). Serve the actual image by appending the filename to the `/images/` route: `GET /images/<filename>`.
+</Note>
+
+### Response
+
+<ResponseField name="success" type="boolean">
+  `true` when the list was fetched successfully.
+</ResponseField>
+
+<ResponseField name="data" type="array">
+  Array of all food item documents from MongoDB.
+
+  <Expandable title="Food item object">
+    <ResponseField name="_id" type="string">
+      MongoDB ObjectId of the food item.
+    </ResponseField>
+    <ResponseField name="name" type="string">
+      Display name of the food item.
+    </ResponseField>
+    <ResponseField name="description" type="string">
+      Short description of the item.
+    </ResponseField>
+    <ResponseField name="price" type="number">
+      Price in INR.
+    </ResponseField>
+    <ResponseField name="category" type="string">
+      Menu category (e.g., `"Salad"`, `"Pasta"`).
+    </ResponseField>
+    <ResponseField name="image" type="string">
+      Stored image filename. Fetch the image at `GET /images/<image>`.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "_id": "6641a3f2e4b0c123456789ab",
+      "name": "Caesar Salad",
+      "description": "Fresh romaine lettuce with Caesar dressing and croutons",
+      "price": 199,
+      "category": "Salad",
+      "image": "1716300000000caesar.jpg"
+    }
+  ]
+}
+```
+
+### Example
+
+```bash
+curl -X GET http://localhost:4000/api/food/list
+```
+
+---
+
+## POST /api/food/remove
+
+Removes a food item from the menu by its MongoDB `_id`. The controller first resolves the item's stored image filename, deletes the file from the `uploads/` directory on disk using `fs.unlink`, and then removes the document from MongoDB.
+
+<Note>
+  This endpoint does not require authentication in the current implementation. Restrict access to admin roles before deploying to production.
+</Note>
+
+### Request Body
+
+<ParamField body="id" type="string" required>
+  The MongoDB `_id` of the food item to remove (e.g., `"6641a3f2e4b0c123456789ab"`).
+</ParamField>
+
+### Response
+
+<ResponseField name="success" type="boolean">
+  `true` when the item and its image were removed successfully.
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  `"Food Removed"` on success, `"Error"` on failure.
+</ResponseField>
+
+```json
+{ "success": true, "message": "Food Removed" }
+```
+
+### Example
+
+```bash
+curl -X POST http://localhost:4000/api/food/remove \
+  -H "Content-Type: application/json" \
+  -d '{ "id": "6641a3f2e4b0c123456789ab" }'
+```

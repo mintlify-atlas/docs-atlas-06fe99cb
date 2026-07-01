@@ -1,0 +1,254 @@
+---
+title: "Authenticate API Requests with JWT Tokens"
+sidebarTitle: "Authentication"
+description: "Learn how the Food Delivery API issues and verifies JWT tokens for secure access to protected cart and order endpoints."
+---
+
+The API uses JSON Web Tokens (JWT) to protect user-specific resources. A token is issued when a user registers or logs in, and must be included as a `token` header on every request that touches private data — such as the cart or order endpoints. Requests that omit a valid token are rejected before they reach the route handler.
+
+## How authentication works
+
+<Steps>
+  <Step title="User registers or logs in">
+    Calling `POST /api/user/register` or `POST /api/user/login` with valid credentials returns a signed JWT. The token payload contains the user's MongoDB `_id` encoded under the `id` key.
+  </Step>
+  <Step title="Client stores the token">
+    The React frontend persists the token in `localStorage` under the key `"token"`. On page load, `StoreContext` reads it back and re-attaches it to every subsequent API call automatically.
+
+    ```js frontend/src/context/StoreContext.jsx
+    useEffect(() => {
+        async function loadData() {
+            await fetchFoodList();
+            if (localStorage.getItem("token")) {
+                setToken(localStorage.getItem("token"));
+                await loadCartData(localStorage.getItem("token"));
+            }
+        }
+        loadData();
+    }, []);
+    ```
+  </Step>
+  <Step title="Protected endpoints verify the token">
+    Every protected route passes the request through `authMiddleware` before the controller runs. The middleware reads `req.headers.token`, verifies it against `JWT_SECRET`, and injects `userId` into `req.body` so controllers can use it directly.
+
+    ```js backend/middleware/auth.js
+    import jwt from "jsonwebtoken"
+
+    const authMiddleware = async (req, res, next) => {
+        const {token} = req.headers;
+        if (!token) {
+            return res.json({success: false, message: "Not Authorized Login Again"})
+        }
+        try {
+            const token_decode = jwt.verify(token, process.env.JWT_SECRET);
+            req.body.userId = token_decode.id;
+            next();
+        } catch (error) {
+            console.log(error);
+            res.json({success: false, message: "Error"})
+        }
+    }
+
+    export default authMiddleware;
+    ```
+  </Step>
+</Steps>
+
+---
+
+## Register a new user
+
+<Note>
+  This endpoint is public — no token is required.
+</Note>
+
+**`POST /api/user/register`**
+
+Creates a new user account, validates the supplied data, hashes the password with bcrypt, persists the record to MongoDB, and returns a signed JWT on success.
+
+### Request body
+
+<ParamField body="name" type="string" required>
+  The user's display name. Stored as-is in the `user` collection.
+</ParamField>
+
+<ParamField body="email" type="string" required>
+  A valid email address. Validated with the `validator` library — malformed addresses are rejected before the record is created. Must be unique across all accounts.
+</ParamField>
+
+<ParamField body="password" type="string" required>
+  Plain-text password. Must be **at least 8 characters**. Hashed with bcrypt at salt-rounds 10 before being stored — the raw password is never persisted.
+</ParamField>
+
+### Responses
+
+<ResponseField name="success" type="boolean">
+  `true` when the account was created and a token was issued.
+</ResponseField>
+
+<ResponseField name="token" type="string">
+  Signed JWT — present only on a successful response.
+</ResponseField>
+
+**Success**
+
+```json
+{
+  "success": true,
+  "token": "<jwt>"
+}
+```
+
+**Failure — email already registered**
+
+```json
+{
+  "success": false,
+  "message": "User already exists."
+}
+```
+
+**Failure — invalid email format**
+
+```json
+{
+  "success": false,
+  "message": "Please enter a valid email."
+}
+```
+
+**Failure — password too short**
+
+```json
+{
+  "success": false,
+  "message": "Please enter a strong password."
+}
+```
+
+### Example
+
+```bash
+curl -X POST http://localhost:4000/api/user/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Jane Doe",
+    "email": "jane@example.com",
+    "password": "supersecret123"
+  }'
+```
+
+---
+
+## Login
+
+<Note>
+  This endpoint is public — no token is required.
+</Note>
+
+**`POST /api/user/login`**
+
+Looks up the user by email, compares the supplied password against the stored bcrypt hash, and returns a signed JWT on success.
+
+### Request body
+
+<ParamField body="email" type="string" required>
+  The email address used when the account was created.
+</ParamField>
+
+<ParamField body="password" type="string" required>
+  The account password in plain text. It is compared against the stored hash using `bcrypt.compare` — never logged or stored.
+</ParamField>
+
+### Responses
+
+<ResponseField name="success" type="boolean">
+  `true` when credentials matched and a token was issued.
+</ResponseField>
+
+<ResponseField name="token" type="string">
+  Signed JWT — present only on a successful response.
+</ResponseField>
+
+**Success**
+
+```json
+{
+  "success": true,
+  "token": "<jwt>"
+}
+```
+
+**Failure — no account with that email**
+
+```json
+{
+  "success": false,
+  "message": "User doesn't exist."
+}
+```
+
+**Failure — wrong password**
+
+```json
+{
+  "success": false,
+  "message": "Invalid credentials"
+}
+```
+
+### Example
+
+```bash
+curl -X POST http://localhost:4000/api/user/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "jane@example.com",
+    "password": "supersecret123"
+  }'
+```
+
+---
+
+## Using the token
+
+Pass the JWT returned from register or login as a `token` HTTP header on every protected request. The middleware decodes it and automatically injects the `userId` into the request — **you do not need to include `userId` in the request body yourself**.
+
+```bash
+curl -X POST http://localhost:4000/api/cart/add \
+  -H "Content-Type: application/json" \
+  -H "token: <your_jwt_token>" \
+  -d '{"itemId": "663a..."}'
+```
+
+The React frontend passes the header the same way via Axios:
+
+```js frontend/src/context/StoreContext.jsx
+await axios.post(url + "/api/cart/add", { itemId }, { headers: { token } })
+```
+
+<Warning>
+  The header name is `token` (lowercase), **not** `Authorization`. Sending `Authorization: Bearer <token>` will not work — the middleware explicitly destructures `req.headers.token` and will respond with `"Not Authorized Login Again"` if it is absent.
+</Warning>
+
+<Note>
+  Tokens are created with `jwt.sign({id}, process.env.JWT_SECRET)` and **no `expiresIn` option is set**, so tokens are valid indefinitely. They only become invalid if the `JWT_SECRET` environment variable changes on the server.
+</Note>
+
+---
+
+## Protected endpoints
+
+The following endpoints require a valid `token` header. Requests without one — or with a token signed by a different secret — are rejected by `authMiddleware` before reaching the controller.
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/cart/add` | Add an item to the authenticated user's cart |
+| `POST` | `/api/cart/remove` | Remove an item from the authenticated user's cart |
+| `POST` | `/api/cart/get` | Fetch the authenticated user's full cart |
+| `POST` | `/api/order/place` | Place a new order (triggers Stripe checkout) |
+| `POST` | `/api/order/userorders` | List all orders for the authenticated user |
+
+<Tip>
+  Admin-only endpoints (`GET /api/order/list`, `POST /api/order/status`) and food listing (`GET /api/food/list`) are **public** and do not require a token.
+</Tip>

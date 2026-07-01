@@ -1,0 +1,128 @@
+---
+title: "Configure Stripe Payments in Food Delivery App"
+sidebarTitle: "Stripe Payments"
+description: "Set up Stripe Checkout in the Food Delivery App to securely accept payments, with a full walkthrough of the hosted checkout flow and order verification logic."
+---
+
+The Food Delivery App processes payments through [Stripe Checkout](https://stripe.com/docs/payments/checkout) — a Stripe-hosted payment page that handles all card entry and processing. The app server never receives or stores raw card data; it only creates a Checkout session and then verifies the result after Stripe redirects the customer back. This approach keeps the integration PCI-compliant with minimal effort and no card-handling code on your server.
+
+<Warning>
+  Always use Stripe **test keys** (`sk_test_...`) during development. Never use or expose your live secret key (`sk_live_...`) in a development environment, and never commit any Stripe key to version control.
+</Warning>
+
+## Setup
+
+<Steps>
+  <Step title="Create a Stripe account">
+    Sign up for a free Stripe account at [stripe.com](https://stripe.com). No business verification is required to use the test environment.
+  </Step>
+  <Step title="Retrieve your test secret key">
+    In the Stripe Dashboard, navigate to **Developers → API keys**. Copy the **Secret key** — it begins with `sk_test_`. Make sure the **Test mode** toggle (top-right of the dashboard) is enabled so you are looking at test credentials.
+  </Step>
+  <Step title="Add the key to your .env file">
+    Open `backend/.env` and add your secret key:
+
+    ```bash backend/.env
+    STRIPE_SECRET_KEY=sk_test_...
+    ```
+
+    The key is loaded by `dotenv` at startup and used to initialise the Stripe client in `backend/controllers/orderController.js`:
+
+    ```js
+    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY)
+    ```
+  </Step>
+  <Step title="Test with Stripe's test card">
+    When you reach the Stripe Checkout page during local testing, use the following test card details — Stripe will simulate a successful payment without charging anything:
+
+    | Field | Value |
+    |---|---|
+    | Card number | `4242 4242 4242 4242` |
+    | Expiry | Any future date (e.g. `12/34`) |
+    | CVC | Any 3 digits (e.g. `123`) |
+    | Postcode | Any valid value |
+  </Step>
+</Steps>
+
+## How the Payment Flow Works
+
+The integration follows a two-step server-side pattern: **create** a Checkout session when the order is placed, then **verify** the payment outcome after Stripe redirects the customer back.
+
+**1. Place order and create a Checkout session (`POST /api/order/place`)**
+
+When the customer submits their order, the `placeOrder` controller:
+- Saves a new order document to MongoDB with `payment: false`
+- Clears the user's `cartData` in the database
+- Builds a `line_items` array — one entry per food item, plus a flat ₹2 delivery charge
+- Calls `stripe.checkout.sessions.create()` with those line items
+- Returns the session URL to the frontend as `session_url`
+
+**2. Redirect to Stripe-hosted checkout**
+
+The frontend receives `session_url` and redirects the customer's browser to Stripe's hosted payment page. The customer enters their card details directly on Stripe's domain — your server is not involved.
+
+**3. Stripe redirects back to the app**
+
+After payment completes or is cancelled, Stripe redirects the customer to either the `success_url` or the `cancel_url`. Both redirect to the `/verify` page with query parameters identifying the order and outcome:
+
+- Success: `/verify?success=true&orderId=<id>`
+- Cancelled: `/verify?success=false&orderId=<id>`
+
+**4. Verify payment outcome (`POST /api/order/verify`)**
+
+The `/verify` page calls `POST /api/order/verify` with the `orderId` and `success` flag from the URL. The `verifyOrder` controller:
+- If `success === "true"`: updates the order's `payment` field to `true` — the order proceeds to fulfilment
+- If `success === "false"`: deletes the order document from MongoDB — the cart is effectively abandoned
+
+## Checkout Session Code
+
+The following code from `backend/controllers/orderController.js` shows exactly how line items are constructed and how the Checkout session is created:
+
+```js backend/controllers/orderController.js
+const line_items = req.body.items.map((item) => ({
+    price_data: {
+        currency: "inr",
+        product_data: {
+            name: item.name
+        },
+        unit_amount: item.price * 100
+    },
+    quantity: item.quantity
+}))
+
+line_items.push({
+    price_data: {
+        currency: "inr",
+        product_data: {
+            name: "Delivery Charges"
+        },
+        unit_amount: 2 * 100
+    },
+    quantity: 1
+})
+
+const session = await stripe.checkout.sessions.create({
+    line_items: line_items,
+    mode: 'payment',
+    success_url: `${frontend_url}/verify?success=true&orderId=${newOrder._id}`,
+    cancel_url: `${frontend_url}/verify?success=false&orderId=${newOrder._id}`,
+})
+
+res.json({ success: true, session_url: session.url })
+```
+
+A few important details about this code:
+
+- **Currency is INR.** The `currency: "inr"` field is set in every `price_data` object. All amounts are specified in the smallest currency unit (paise), so prices are multiplied by `100` before being passed to Stripe.
+- **Delivery charge is a separate line item.** A flat ₹2 delivery fee is appended to the `line_items` array as its own entry with `unit_amount: 2 * 100` (200 paise) and `quantity: 1`. This charge appears as "Delivery Charges" on the Stripe Checkout page.
+- **`mode: 'payment'`** configures the session for a one-time payment, as opposed to a subscription.
+
+<Note>
+  The `frontend_url` variable is currently hard-coded to `http://localhost:5173` at the top of `orderController.js`:
+
+  ```js
+  const frontend_url = "http://localhost:5173";
+  ```
+
+  The `success_url` and `cancel_url` are both derived from this value. For production deployments, replace this string with your actual frontend URL (e.g. `https://www.yourdomain.com`), or better yet, move it to an environment variable such as `FRONTEND_URL` so it can be configured without changing source code.
+</Note>

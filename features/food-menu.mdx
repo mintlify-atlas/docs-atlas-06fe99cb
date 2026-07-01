@@ -1,0 +1,156 @@
+---
+title: "Food Menu: Browse and Filter Items by Category"
+sidebarTitle: "Food Menu"
+description: "Explore how the food menu fetches items from the backend, filters them by category, and displays interactive food cards to customers."
+---
+
+The food menu is the heart of the customer-facing app. When the application first loads, all available dishes are fetched from the backend and stored in a global context. Customers can then scroll through the full catalogue or narrow their view to a specific category — and add or remove items directly from each card without leaving the page.
+
+## How the Menu Works
+
+The `StoreContextProvider` in `StoreContext.jsx` calls `GET /api/food/list` as part of its initial `loadData` effect. The response is stored in the `food_list` state array and shared across the entire app through React Context. Every component that needs the menu — the display grid, the cart, the order summary — reads from this single source of truth.
+
+```jsx
+const fetchFoodList = async () => {
+  const response = await axios.get(url + "/api/food/list");
+  setFoodList(response.data.data);
+};
+```
+
+<Note>
+  `food_list` is populated once on app mount. The menu reflects the catalogue as it existed at page load. Refreshing the page re-fetches the latest items from the database.
+</Note>
+
+## Categories
+
+The `ExploreMenu` component renders a horizontally scrollable row of category icons. Clicking a category icon sets the active `category` state in the parent `Home` page, which is passed down to `FoodDisplay` to filter the grid.
+
+<CardGroup cols={2}>
+  <Card title="Salad" icon="leaf">
+    Fresh salads and vegetable-forward dishes.
+  </Card>
+  <Card title="Rolls" icon="utensils">
+    Stuffed and grilled rolls for on-the-go eating.
+  </Card>
+  <Card title="Deserts" icon="cake-slice">
+    Sweet desserts to end your meal.
+  </Card>
+  <Card title="Sandwich" icon="bread-slice">
+    Classic and gourmet sandwiches.
+  </Card>
+  <Card title="Cake" icon="cake-candles">
+    Celebration and everyday cakes.
+  </Card>
+  <Card title="Pure Veg" icon="seedling">
+    100 % vegetarian dishes.
+  </Card>
+  <Card title="Pasta" icon="bowl-food">
+    Italian-style pasta preparations.
+  </Card>
+  <Card title="Noodles" icon="bowl-rice">
+    Asian noodle bowls and stir-fries.
+  </Card>
+</CardGroup>
+
+Clicking a category a second time deselects it and returns the grid to the **All** view:
+
+```jsx
+onClick={() =>
+  setCategory(prev => prev === item.menu_name ? "All" : item.menu_name)
+}
+```
+
+## FoodDisplay Component
+
+`FoodDisplay` receives the active `category` prop and iterates over `food_list`. Items whose `category` does not match the selection are skipped; when the category is `"All"`, every item is rendered.
+
+```jsx
+{food_list.map((item, index) => {
+  if (category === "All" || category === item.category) {
+    return (
+      <FoodItem
+        key={index}
+        id={item._id}
+        name={item.name}
+        description={item.description}
+        price={item.price}
+        image={item.image}
+      />
+    );
+  }
+})}
+```
+
+## FoodItem Card
+
+Each `FoodItem` card displays:
+
+- **Image** — loaded from `/images/<filename>` on the backend server
+- **Name** — the dish's title
+- **Description** — a short text describing the dish
+- **Price** — displayed as `Rs.<price>`
+- **Rating stars** — a static star-rating graphic
+- **Cart controls** — a **+** button when the item is not yet in the cart; once added, an inline counter with **−** / quantity / **+** controls appears
+
+```jsx
+<img className="food-item-image" src={url + "/images/" + image} alt="" />
+
+{!cartItems[id]
+  ? <img className="add" onClick={() => addToCart(id)} src={assets.add_icon_white} alt="" />
+  : <div className="food-item-counter">
+      <img onClick={() => removeFromCart(id)} src={assets.remove_icon_red} alt="" />
+      <p>{cartItems[id]}</p>
+      <img onClick={() => addToCart(id)} src={assets.add_icon_green} alt="" />
+    </div>
+}
+```
+
+## Food Data Model
+
+Food documents in MongoDB follow this Mongoose schema (from `backend/models/foodModel.js`):
+
+| Field         | Type     | Required | Notes                              |
+| ------------- | -------- | -------- | ---------------------------------- |
+| `name`        | `String` | ✅        | Display name of the dish           |
+| `description` | `String` | ✅        | Short description shown on the card |
+| `price`       | `Number` | ✅        | Price in INR                       |
+| `image`       | `String` | ✅        | Filename stored in `backend/uploads/` |
+| `category`    | `String` | ✅        | One of the 8 supported categories  |
+
+## API Response Shape
+
+A successful call to `GET /api/food/list` returns:
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "_id": "663a...",
+      "name": "Greek Salad",
+      "description": "Fresh vegetables and feta cheese",
+      "price": 12,
+      "category": "Salad",
+      "image": "1713578089412food_1.png"
+    }
+  ]
+}
+```
+
+## Image Serving
+
+Food images are stored in `backend/uploads/` at the time an item is added. They are served as static files at:
+
+```
+GET /images/:filename
+```
+
+For example, an item with `image: "1713578089412food_1.png"` resolves to:
+
+```
+http://localhost:3000/images/1713578089412food_1.png
+```
+
+<Note>
+  Update the base URL in `StoreContext.jsx` (currently `http://localhost:3000`) to your production server address before deploying.
+</Note>

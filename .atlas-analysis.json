@@ -1,0 +1,90 @@
+{
+  "projectType": "saas",
+  "projectName": "Food Delivery App",
+  "projectDescription": "A full-stack food delivery platform with a customer-facing React frontend, admin dashboard, and Node.js/Express REST API backed by MongoDB and Stripe payments.",
+  "theme": "almond",
+  "primaryColor": "#FF6B35",
+  "lightColor": "#FFF4EE",
+  "darkColor": "#C0420A",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "project-structure"
+            ]
+          },
+          {
+            "group": "Core Features",
+            "pages": [
+              "features/food-menu",
+              "features/cart-checkout",
+              "features/order-management",
+              "features/admin-panel"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "configuration/environment-variables",
+              "configuration/database",
+              "configuration/stripe-payments"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Authentication",
+            "pages": [
+              "api/authentication"
+            ]
+          },
+          {
+            "group": "Endpoints",
+            "pages": [
+              "api/food",
+              "api/cart",
+              "api/orders"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Browse and filter food menu by category",
+    "User registration and JWT-based authentication",
+    "Add/remove items from a persistent cart",
+    "Place orders with Stripe payment integration",
+    "Real-time order status tracking for customers",
+    "Admin dashboard to add, list, and remove food items",
+    "Admin order management with status updates",
+    "MongoDB persistence for users, food items, and orders",
+    "Image upload for food items via Multer",
+    "Password hashing with bcrypt"
+  ],
+  "publicApiSurface": [
+    "POST /api/user/register",
+    "POST /api/user/login",
+    "POST /api/food/add",
+    "GET  /api/food/list",
+    "POST /api/food/remove",
+    "POST /api/cart/add",
+    "POST /api/cart/remove",
+    "POST /api/cart/get",
+    "POST /api/order/place",
+    "POST /api/order/verify",
+    "POST /api/order/userorders",
+    "GET  /api/order/list",
+    "POST /api/order/status",
+    "GET  /images/:filename"
+  ]
+}

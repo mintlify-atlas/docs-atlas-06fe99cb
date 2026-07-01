@@ -1,47 +1,132 @@
 ---
-title: "Quickstart"
-description: "Begin with a guide on the fastest path to a successful outcome"
+title: "Get Started with Food Delivery App"
+sidebarTitle: "Quickstart"
+description: "Clone the Food Delivery App monorepo, configure your environment variables, and run the backend API, customer frontend, and admin dashboard locally."
 ---
 
-Describe how someone begins using your product. What is the first thing they need to do? Are there any prerequisites?
-
-A quickstart should take someone from zero to using your product. They'll get a quick win and a sense of what they can accomplish.
+This guide walks you through cloning the Food Delivery App repository and getting all three services — the Express backend, the customer React frontend, and the admin React dashboard — running on your local machine. The entire setup takes about five minutes once you have the prerequisites in place.
 
 ## Prerequisites
 
-Before you begin, you must have:
+Before you begin, make sure you have the following available:
 
-- Requirement one (for example, Node.js 18+, a free account, an API key)
-- Requirement two (for example, a compatible device, a compatible browser, a compatible operating system)
+- **Node.js 18+** — The backend and both Vite frontends require Node 18 or later. Run `node -v` to check.
+- **MongoDB instance** — A locally running MongoDB server or a free [MongoDB Atlas](https://www.mongodb.com/atlas) cluster. You will need the connection URI.
+- **Stripe account** — A free Stripe account with access to your **test** secret key (`sk_test_...`). No real charges are made during development.
+- **Git** — To clone the repository.
 
-## Get started
+## Setup Steps
 
 <Steps>
-  <Step title="Install">
-    Describe how to install your product or sign up.
+  <Step title="Clone the repository">
+    Clone the monorepo from GitHub and enter the project root directory.
 
     ```bash
-    npm install your-package
+    git clone https://github.com/bhavnesh7781/Food-Delivery-App.git && cd Food-Delivery-App
     ```
   </Step>
-  <Step title="Configure">
-    Describe any setup or configuration needed before first use.
+
+  <Step title="Configure the backend environment">
+    The Express server reads its secrets from a `.env` file that is **not** committed to version control. Create it now:
 
     ```bash
-    your-cli init
+    touch backend/.env
+    ```
+
+    Open `backend/.env` in your editor and add the following keys:
+
+    ```env
+    MONGODB_URI=your_mongodb_connection_string
+    JWT_SECRET=a_long_random_secret_string
+    STRIPE_SECRET_KEY=sk_test_your_stripe_secret_key
+    ```
+
+    | Variable | Description |
+    |---|---|
+    | `MONGODB_URI` | Full connection string, e.g. `mongodb://localhost:27017/food-delivery` or a MongoDB Atlas URI |
+    | `JWT_SECRET` | Any long, random string — used to sign and verify authentication tokens |
+    | `STRIPE_SECRET_KEY` | Your Stripe **test** secret key from the [Stripe Dashboard](https://dashboard.stripe.com/apikeys) |
+
+    <Note>
+      See the [Environment Variables](/configuration/environment-variables) reference page for the complete list of accepted variables and their default values.
+    </Note>
+  </Step>
+
+  <Step title="Install backend dependencies and start the API server">
+    Move into the `backend` directory, install dependencies, and start the server with nodemon.
+
+    ```bash
+    cd backend && npm install && npm run server
+    ```
+
+    Nodemon watches `server.js` for changes and restarts automatically. The server listens on **port 4000** by default (configurable via a `PORT` env variable). A successful start prints:
+
+    ```
+    Server Started on http://localhost:4000
     ```
   </Step>
-  <Step title="Run it">
-    Show the first thing a user does to see it working.
+
+  <Step title="Install and start the customer frontend">
+    Open a **new terminal**, return to the project root, then install and start the Vite dev server for the customer app.
 
     ```bash
-    your-cli start
+    cd ../frontend && npm install && npm run dev
+    ```
+
+    Vite starts the customer app on **port 5173** (the default Vite port). You will see output similar to:
+
+    ```
+    VITE v5.x.x  ready in Xms
+    ➜  Local:   http://localhost:5173/
+    ```
+  </Step>
+
+  <Step title="Install and start the admin dashboard">
+    Open another **new terminal**, navigate to the `admin` directory, and start its Vite dev server.
+
+    ```bash
+    cd ../admin && npm install && npm run dev
+    ```
+
+    The admin dashboard runs on **port 5174** by default.
+
+    ```
+    VITE v5.x.x  ready in Xms
+    ➜  Local:   http://localhost:5174/
     ```
   </Step>
 </Steps>
 
-<Tip>
-  Give people a way to get help. This could be a link to a support page, a chat with a customer support agent, or a forum for your product.
+<Note>
+  All three services — the backend API (port 4000), the customer frontend (port 5173), and the admin dashboard (port 5174) — must be running **concurrently** for the application to work correctly. Use three separate terminal tabs or a process manager like `concurrently` to keep them all alive.
+</Note>
 
-  Example: Need help? Reach out to us at [support@yourcompany.com](mailto:support@yourcompany.com).
+## Verify Everything Works
+
+Once all three services are up, confirm each one is healthy before you start developing.
+
+**Check the backend API**
+
+The root route returns a plain-text health message. Run the following from any terminal:
+
+```bash
+curl http://localhost:4000/
+```
+
+Expected response:
+
+```
+API Working
+```
+
+**Browse the customer storefront**
+
+Open [http://localhost:5173](http://localhost:5173) in your browser. The homepage fetches the food catalog from `GET /api/food/list` and displays available items grouped by category. If you see food cards rendered, the frontend-to-backend connection is working.
+
+**Access the admin dashboard**
+
+Open [http://localhost:5174](http://localhost:5174). You should see the admin layout with a sidebar containing **Add**, **List**, and **Orders** navigation links. Use the **Add** page to upload a test food item and verify that it appears in the **List** view and on the customer storefront.
+
+<Tip>
+  For a full reference of all environment variables accepted by the backend, visit the [Environment Variables](/configuration/environment-variables) configuration page.
 </Tip>

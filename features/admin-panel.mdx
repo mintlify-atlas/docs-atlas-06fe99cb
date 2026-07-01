@@ -1,0 +1,155 @@
+---
+title: "Admin Dashboard: Manage Menu Items and Orders"
+sidebarTitle: "Admin Panel"
+description: "A complete guide to the admin dashboard — adding and removing food items, managing the menu catalogue, and updating live order statuses."
+---
+
+The admin dashboard gives restaurant operators full control over the menu catalogue and order pipeline through a clean, purpose-built interface. It is a separate React + Vite application located in the `/admin` directory of the monorepo, but it shares the same Node.js/Express backend as the customer-facing frontend — all API calls go to the same server.
+
+## Architecture Overview
+
+The admin app is a standalone React + Vite application. It connects to the backend via the `url` constant defined in `App.jsx`:
+
+```jsx
+// admin/src/App.jsx
+const url = "http://localhost:3000";
+```
+
+<Warning>
+  The admin panel has **no built-in authentication**. Any user who can reach the admin app URL has full access to add, delete, and manage menu items and orders. In production, restrict access at the network or infrastructure level (e.g. VPN, IP allowlist, or a reverse-proxy basic-auth layer).
+</Warning>
+
+<Note>
+  The backend URL is hardcoded to `http://localhost:3000` in `admin/src/App.jsx`. Update this value to your production backend URL before deploying the admin panel.
+</Note>
+
+## Pages and Routes
+
+<CardGroup cols={2}>
+  <Card title="Add Food Item" icon="plus" href="#add-food-item">
+    `/add` — Upload an image and fill in item details to add a new dish to the menu.
+  </Card>
+  <Card title="All Foods List" icon="list" href="#food-list">
+    `/list` — Browse every item in the catalogue and remove items that are no longer available.
+  </Card>
+  <Card title="Orders" icon="truck" href="#orders">
+    `/orders` — View all customer orders and advance each order through its delivery lifecycle.
+  </Card>
+</CardGroup>
+
+## Add Food Item
+
+The `/add` page lets operators upload a new dish to the menu. The form submits as `multipart/form-data` to `POST /api/food/add`.
+
+### Form Fields
+
+| Field         | Type            | Notes                                       |
+| ------------- | --------------- | ------------------------------------------- |
+| Image         | File upload     | Required — stored in `backend/uploads/`     |
+| Product name  | Text            | The dish's display name                     |
+| Description   | Textarea        | Short description shown on each food card   |
+| Category      | Select dropdown | One of 8 fixed categories (see below)       |
+| Price         | Number          | Price in INR; displayed as `Rs.<price>`     |
+
+### Category Options
+
+The category dropdown is populated with these exact values:
+
+```
+Salad · Rolls · Deserts · Sandwich · Cake · Pure Veg · Pasta · Noodles
+```
+
+### Submission Flow
+
+```jsx
+const formData = new FormData();
+formData.append("name",        data.name);
+formData.append("description", data.description);
+formData.append("price",       Number(data.price));
+formData.append("category",    data.category);
+formData.append("image",       image);
+
+const response = await axios.post(`${url}/api/food/add`, formData);
+```
+
+On success the backend saves the food document to MongoDB and writes the uploaded image to `backend/uploads/`. The image is then served at `/images/<filename>`.
+
+## Food List
+
+The `/list` page calls `GET /api/food/list` on mount and renders a table of all items currently in the catalogue.
+
+### Table Columns
+
+| Column   | Value                                         |
+| -------- | --------------------------------------------- |
+| Image    | Thumbnail loaded from `/images/<filename>`    |
+| Name     | Dish name                                     |
+| Category | Category string                               |
+| Price    | Item price                                    |
+| Action   | **X** button — triggers delete                |
+
+### Deleting a Food Item
+
+Clicking the **X** button calls `POST /api/food/remove` with `{ id: foodId }`:
+
+```jsx
+const removeFood = async (foodId) => {
+  const response = await axios.post(`${url}/api/food/remove`, { id: foodId });
+  await fetchList(); // refresh the table
+};
+```
+
+On the backend, `removeFood` in `foodController.js` first retrieves the document to get the image filename, then removes the file from disk before deleting the MongoDB document:
+
+```js
+const food = await foodModel.findById(req.body.id);
+fs.unlink(`uploads/${food.image}`, () => {});
+await foodModel.findByIdAndDelete(req.body.id);
+```
+
+<Warning>
+  Deleting a food item permanently removes both the database record **and** the image file from `backend/uploads/`. This action cannot be undone.
+</Warning>
+
+## Orders
+
+The `/orders` page provides a live view of every order placed through the customer app. It calls `GET /api/order/list` on mount to load all orders.
+
+### Order Card Contents
+
+Each order card displays:
+
+- **Item list** — `item.name × item.quantity` for every item in the order, comma-separated
+- **Customer name** — `address.firstName + " " + address.lastName`
+- **Delivery address** — street, then city / state / country / zipcode on the next line
+- **Phone number** — `address.phone`
+- **Item count** — total number of distinct items
+- **Order total** — `$<amount>`
+
+### Updating Order Status
+
+A `<select>` dropdown on each card reflects the current status and lets operators move it forward:
+
+```jsx
+<select onChange={(event) => statusHandler(event, order._id)} value={order.status}>
+  <option value="Food Processing">Food Processing</option>
+  <option value="Out for delivery">Out for delivery</option>
+  <option value="Delivered">Delivered</option>
+</select>
+```
+
+Selecting a new value fires `POST /api/order/status` with `{ orderId, status }`:
+
+```jsx
+const statusHandler = async (event, orderId) => {
+  const response = await axios.post(url + "/api/order/status", {
+    orderId,
+    status: event.target.value
+  });
+  if (response.data.success) {
+    await fetchAllOrders(); // refresh the order list
+  }
+};
+```
+
+The order list automatically refreshes after each successful status update so the admin always sees the current state.

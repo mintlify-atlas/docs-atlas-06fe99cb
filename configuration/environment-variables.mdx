@@ -1,0 +1,69 @@
+---
+title: "Environment Variables Reference for Food Delivery App"
+sidebarTitle: "Environment Variables"
+description: "A complete reference for all environment variables required to run the Food Delivery App backend, including MongoDB, JWT, Stripe, and server port settings."
+---
+
+The Food Delivery App backend reads all runtime configuration from a `.env` file located in the `backend/` directory. This file is loaded at startup via the `dotenv` package (`import 'dotenv/config'` in `server.js`), making every key available as `process.env.<KEY>` throughout the application. You must create this file before starting the server — without it, the database connection, authentication, and payment processing will all fail to initialise.
+
+## .env Template
+
+Create the file `backend/.env` and populate it with the following values, replacing each placeholder with your real credentials:
+
+```bash backend/.env
+MONGODB_URI=mongodb+srv://<user>:<password>@cluster.mongodb.net/food-delivery
+JWT_SECRET=your_super_secret_key_here
+STRIPE_SECRET_KEY=sk_test_...
+PORT=4000
+```
+
+<Warning>
+  Never commit your `.env` file to version control. Add `backend/.env` to your `.gitignore` immediately to prevent accidentally leaking database credentials, JWT secrets, or Stripe keys to a public repository.
+</Warning>
+
+## Variable Reference
+
+<ParamField path="MONGODB_URI" type="string" required>
+  The MongoDB connection string used by Mongoose to connect to your database. Consumed in `backend/config/db.js` via `mongoose.connect(process.env.MONGODB_URI)`.
+
+  - **Local MongoDB:** `mongodb://localhost:27017/food-delivery`
+  - **MongoDB Atlas:** `mongodb+srv://<user>:<password>@cluster.mongodb.net/food-delivery`
+
+  See the [Database setup guide](/configuration/database) for full instructions on obtaining this value.
+</ParamField>
+
+<ParamField path="JWT_SECRET" type="string" required>
+  The secret key used to sign and verify JSON Web Tokens. When a user logs in, the server signs a JWT with this key. On every subsequent authenticated request, `backend/middleware/auth.js` calls `jwt.verify(token, process.env.JWT_SECRET)` to validate the token and extract the user's ID.
+
+  Choose a long, random, high-entropy string (at least 32 characters). Never reuse this value across environments.
+</ParamField>
+
+<ParamField path="STRIPE_SECRET_KEY" type="string" required>
+  Your Stripe secret API key, used to create Stripe Checkout sessions when a customer places an order. Consumed in `backend/controllers/orderController.js` where `new Stripe(process.env.STRIPE_SECRET_KEY)` initialises the Stripe client.
+
+  - **Development:** use a test key prefixed with `sk_test_`
+  - **Production:** use a live key prefixed with `sk_live_`
+
+  See the [Stripe Payments setup guide](/configuration/stripe-payments) for full instructions.
+</ParamField>
+
+<ParamField path="PORT" type="number">
+  The port number the Express HTTP server listens on. Defined in `server.js` as `const PORT = process.env.PORT || 4000`, so this variable is **optional** — the server defaults to port **4000** when it is not set.
+</ParamField>
+
+## Hard-coded Frontend URLs
+
+<Note>
+  The frontend and admin dashboard currently hard-code the backend base URL as `http://localhost:3000` in two files:
+
+  - `frontend/src/context/StoreContext.jsx` — `const url = "http://localhost:3000"`
+  - `admin/src/App.jsx` — `const url = "http://localhost:3000"`
+
+  For production deployments you must update both of these values to your deployed backend URL (e.g. `https://api.yourdomain.com`). Consider moving this value to a frontend `.env` file using a `VITE_API_URL` variable so it can be configured per environment without changing source code.
+</Note>
+
+<Tip>
+  Once your `.env` is configured, continue with the setup guides:
+  - **[Database →](/configuration/database)** — connect to a local MongoDB instance or provision a free MongoDB Atlas cluster.
+  - **[Stripe Payments →](/configuration/stripe-payments)** — obtain your Stripe test keys and verify the checkout flow end-to-end.
+</Tip>

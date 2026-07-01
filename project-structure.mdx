@@ -1,0 +1,164 @@
+---
+title: "Food Delivery App Repository Structure"
+sidebarTitle: "Project Structure"
+description: "A guided tour of the Food Delivery App monorepo — explaining every directory and key file across the backend API, customer frontend, and admin dashboard."
+---
+
+The Food Delivery App is organized as a monorepo with three self-contained sub-projects sitting at the root level: `backend`, `frontend`, and `admin`. Each sub-project has its own `package.json` and must be started independently. This page explains the purpose of every significant directory and file so you can navigate and extend the codebase with confidence.
+
+## Directory Tree
+
+```text
+Food-Delivery-App/
+├── backend/           # Express API server
+│   ├── config/        # MongoDB connection
+│   ├── controllers/   # Route handler logic
+│   ├── middleware/     # JWT auth middleware
+│   ├── models/        # Mongoose schemas
+│   ├── routes/        # Express routers
+│   ├── uploads/       # Uploaded food images
+│   └── server.js      # App entry point
+├── frontend/          # Customer React app
+│   └── src/
+│       ├── components/ # Navbar, FoodItem, ExploreMenu, Header, LoginPopup, Footer
+│       ├── context/    # StoreContext (global state)
+│       └── pages/      # Home, Cart, PlaceOrder, MyOrders, Verify
+└── admin/             # Admin React dashboard
+    └── src/
+        ├── components/ # Navbar, Sidebar
+        └── pages/      # Add, List, Orders
+```
+
+---
+
+## Backend
+
+The `backend` sub-project is a Node.js application written entirely with ES Module syntax (`"type": "module"` in `package.json`). It is started with `npm run server`, which invokes nodemon so the process restarts automatically on file changes.
+
+### `server.js` — Entry Point
+
+`server.js` is the single entry point for the entire API. It is responsible for:
+
+1. Creating the Express `app` instance.
+2. Applying global middleware — `express.json()` for JSON body parsing and `cors()` to allow cross-origin requests from the React dev servers.
+3. Calling `connectDB()` to open the Mongoose connection to MongoDB.
+4. Mounting each router at its URL prefix.
+5. Serving the static `uploads/` directory at `/images`.
+6. Starting the HTTP server on `process.env.PORT` (defaults to `4000`).
+
+### API Route Prefixes
+
+| Prefix | Router file | Description |
+|---|---|---|
+| `/api/food` | `routes/foodRoute.js` | Add (`POST /add`), list (`GET /list`), and remove (`POST /remove`) food items. The `add` endpoint uses Multer to handle the image upload. |
+| `/api/user` | `routes/userRoute.js` | Register (`POST /register`) and log in (`POST /login`) returning a signed JWT. |
+| `/api/cart` | `routes/cartRoute.js` | Add (`POST /add`), remove (`POST /remove`), and retrieve (`POST /get`) cart items. All three endpoints require a valid JWT via `authMiddleware`. |
+| `/api/order` | `routes/orderRoute.js` | Place an order (`POST /place`), verify a Stripe payment (`POST /verify`), retrieve orders for the logged-in user (`POST /userorders`), list all orders for admin (`GET /list`), and update an order status (`POST /status`). |
+| `/images` | `express.static` | Serves uploaded food images stored in `backend/uploads/` directly as static files. |
+
+### `config/db.js`
+
+Exports the `connectDB` function, which uses the `MONGODB_URI` environment variable to open a Mongoose connection. Called once at startup from `server.js`.
+
+### `controllers/`
+
+Each file maps to one route group and contains the business logic that reads from and writes to MongoDB:
+
+- **`foodController.js`** — Handles add, list, and remove operations for food documents. The add handler receives the Multer-processed file and persists the filename alongside the food metadata.
+- **`userController.js`** — Registers new users (hashing passwords with bcrypt) and authenticates returning users, returning a signed JWT on success.
+- **`cartController.js`** — Reads and mutates the `cart` field on the user document stored in MongoDB.
+- **`orderController.js`** — Creates Stripe Checkout sessions, handles Stripe webhook verification, and manages order lifecycle status updates.
+
+### `middleware/auth.js`
+
+A single Express middleware function (`authMiddleware`) that reads the `token` header from the incoming request, verifies it with `jsonwebtoken`, and attaches the decoded `userId` to `req.body`. Routes that need authentication import and use this middleware directly.
+
+<Note>
+  The JWT is expected in a custom HTTP header named `token` (not the standard `Authorization: Bearer` header). Both the frontend and admin apps pass it this way when making authenticated requests via Axios.
+</Note>
+
+### `models/`
+
+Three Mongoose schemas define the MongoDB document shapes:
+
+- **`foodModel.js`** — Name, description, price, image filename, and category.
+- **`userModel.js`** — Name, email, hashed password, and a `cartData` map for persisting cart state.
+- **`orderModel.js`** — Reference to userId, array of items, amount, address, payment status, and delivery status string.
+
+### `uploads/`
+
+Food images uploaded through the admin dashboard are stored here as timestamped files (e.g., `1713578089412food_1.png`). They are served back to clients via the `/images` static route.
+
+---
+
+## Frontend
+
+The `frontend` sub-project is the customer-facing React 18 SPA scaffolded with Vite 5. It uses React Router v6 for client-side navigation and Axios for all API calls.
+
+### `src/context/StoreContext.jsx` — Global State
+
+`StoreContext` is the central nervous system of the customer app. It is provided at the application root in `main.jsx` so every component can consume it. The context exposes:
+
+| Value | Type | Description |
+|---|---|---|
+| `food_list` | `Array` | Full catalog fetched from `GET /api/food/list` on mount. |
+| `cartItems` | `Object` | Map of `{ [itemId]: quantity }` kept in sync with the backend for authenticated users. |
+| `addToCart(itemId)` | `Function` | Increments the local count and, if a token exists, calls `POST /api/cart/add`. |
+| `removeFromCart(itemId)` | `Function` | Decrements the local count and calls `POST /api/cart/remove` when authenticated. |
+| `getTotalCartAmount()` | `Function` | Iterates `cartItems`, looks up prices from `food_list`, and returns the running total. |
+| `token` / `setToken` | `string / Function` | The JWT string. Persisted to `localStorage` on login and rehydrated on page load. |
+| `url` | `string` | Base URL for the backend API (`http://localhost:3000` by default — update to match your backend port). |
+
+<Note>
+  On component mount, `StoreContext` fetches the full food list and, if a token is found in `localStorage`, also rehydrates the cart from the backend. This means a user's cart survives a page refresh.
+</Note>
+
+### `src/pages/`
+
+| Page | Route | Description |
+|---|---|---|
+| `Home` | `/` | Landing page — renders the `Header` hero banner, `ExploreMenu` category filter, and a `FoodDisplay` grid of matching items. |
+| `Cart` | `/cart` | Displays `cartItems` with quantities, subtotal, delivery fee, and total. Links to the order placement flow. |
+| `PlaceOrder` | `/order` | Delivery address form. On submission it calls `POST /api/order/place`, which returns a Stripe Checkout URL; the user is redirected to Stripe. |
+| `Verify` | `/verify` | Stripe redirects here after payment. The page calls `POST /api/order/verify` to confirm payment and updates the order record. |
+| `MyOrders` | `/myorders` | Fetches the logged-in user's order history from `POST /api/order/userorders` and displays status for each. |
+
+### `src/components/`
+
+| Component | Role |
+|---|---|
+| `Navbar` | Top navigation bar with logo, category links, cart icon with item count badge, and sign-in/sign-out button. Receives `setShowLogin` to trigger the login popup. |
+| `LoginPopup` | Modal overlay rendered conditionally in `App.jsx`. Handles both **Sign Up** and **Login** flows, sets the token in context and `localStorage` on success. |
+| `Header` | Full-width hero section on the Home page. |
+| `ExploreMenu` | Horizontally scrollable category selector; filters the `FoodDisplay` grid. |
+| `FoodDisplay` | Renders a grid of `FoodItem` cards filtered by the selected category. |
+| `FoodItem` | Individual food card showing image (from `/images/<filename>`), name, price, description, and an add-to-cart control. |
+| `Footer` | Site footer with links and contact information. |
+
+---
+
+## Admin
+
+The `admin` sub-project is a separate React 18 + Vite app that gives restaurant operators control over the food catalog and live order management. It uses `react-toastify` for non-blocking success/error notifications.
+
+### `src/pages/`
+
+**Add** (`/add`)
+The form page for adding a new food item to the catalog. Operators fill in the name, description, price, and category, and upload a cover image. On submission it sends a `multipart/form-data` `POST` request to `/api/food/add`. A toast notification confirms success or reports an error.
+
+**List** (`/list`)
+Fetches all food items from `GET /api/food/list` and renders them in a table. Each row has a **Delete** button that calls `POST /api/food/remove` and refreshes the list in place. Useful for auditing the catalog and removing discontinued items.
+
+**Orders** (`/orders`)
+Fetches all orders from `GET /api/order/list` and displays them with current status. Operators can change the delivery status (e.g., "Food Processing", "Out for Delivery", "Delivered") via a dropdown, which fires `POST /api/order/status` to persist the change.
+
+### `src/components/`
+
+| Component | Role |
+|---|---|
+| `Navbar` | Admin top bar displaying the application logo and operator profile image. |
+| `Sidebar` | Left-hand navigation with icon links to the **Add**, **List**, and **Orders** pages. |
+
+<Note>
+  The admin app does not implement its own authentication layer — it is intended to run as a trusted internal tool on a private network or behind a reverse proxy with access controls. Do not expose port 5174 publicly in production.
+</Note>

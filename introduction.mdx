@@ -1,0 +1,75 @@
+---
+title: "Food Delivery App: Full-Stack Ordering Platform Overview"
+sidebarTitle: "Introduction"
+description: "A full-stack food ordering platform built with React 18, Express 4, MongoDB, and Stripe — covering the customer app, admin dashboard, and REST API."
+---
+
+The Food Delivery App is a production-ready, full-stack food ordering platform that brings together a customer-facing React storefront, an operator-facing admin dashboard, and a Node.js/Express REST API backed by MongoDB. This page gives you a high-level tour of what the project does, how its three sub-applications fit together, and which technologies power each layer.
+
+## Overview
+
+Use the cards below to jump to the most important sections of the documentation.
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Clone the repo, configure your environment, and have all three services running locally in minutes.
+  </Card>
+  <Card title="Project Structure" icon="folder-tree" href="/project-structure">
+    Understand every directory and file in the monorepo — backend, frontend, and admin.
+  </Card>
+  <Card title="Food Menu & Features" icon="utensils" href="/features/food-menu">
+    Browse how the food catalog is stored, served, and displayed to customers.
+  </Card>
+  <Card title="API Authentication" icon="lock" href="/api/authentication">
+    Learn how JWT tokens are issued on login and validated by the auth middleware on protected routes.
+  </Card>
+</CardGroup>
+
+## Architecture Overview
+
+The repository is a monorepo containing three independent applications that communicate over HTTP.
+
+```
+Browser (Customer)          Browser (Admin)
+        │                          │
+        ▼                          ▼
+ frontend (React 18)      admin (React 18)
+  Vite · port 5173         Vite · port 5174
+        │                          │
+        └──────────┬───────────────┘
+                   │  REST API calls
+                   ▼
+         backend (Express 4)
+          Node.js · port 4000
+                   │
+          ┌────────┴────────┐
+          ▼                 ▼
+       MongoDB           Stripe
+    (Mongoose ODM)   (Payment API)
+```
+
+**Customer frontend** — A React 18 single-page app where users browse food items by category, manage a cart, and place orders via Stripe Checkout. A `LoginPopup` component handles authentication without a page redirect, and `StoreContext` keeps cart state and the JWT token in sync across every component.
+
+**Admin dashboard** — A separate React 18 app (also Vite-powered) that lets restaurant operators add new food items with image uploads, view and delete the full catalog, and update live order statuses. It communicates with the same backend API as the customer app.
+
+**Backend API** — An Express 4 server using ES Modules (`"type": "module"`) that exposes four route groups, connects to MongoDB through Mongoose, stores uploaded food images on disk via Multer, issues and verifies JWTs for auth, and triggers Stripe payment sessions for orders.
+
+## Technology Stack
+
+| Layer | Technology | Role |
+|---|---|---|
+| Frontend & Admin | React 18 + Vite 5 | Component UI, client-side routing via React Router v6 |
+| HTTP Client | Axios 1.x | All API calls from both React apps |
+| Backend framework | Express 4 | REST API routing, middleware pipeline |
+| Database | MongoDB + Mongoose 8 | Persistent storage for food items, users, carts, orders |
+| Authentication | JSON Web Tokens (jsonwebtoken 9) | Stateless auth — token issued on login, verified per request |
+| Payments | Stripe SDK 15 | Hosted Checkout sessions for order payments |
+| File uploads | Multer 1 | Multipart form handling; food images stored in `backend/uploads/` |
+| Password hashing | bcrypt 5 | Salted hashes stored in MongoDB — passwords never stored in plain text |
+| Environment config | dotenv 16 | Loads `.env` values into `process.env` at startup |
+| Dev server reload | nodemon 3 | Watches `server.js` and restarts on file changes |
+| Admin notifications | react-toastify 10 | Toast alerts for add/remove/update actions in the admin UI |
+
+<Tip>
+Ready to run the project locally? Head to the [Quickstart](/quickstart) guide to clone the repo and start all three services in under five minutes.
+</Tip>
