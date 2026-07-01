@@ -1,5 +1,5 @@
 ---
-title: "Food Menu: Browse and Filter Items by Category"
+title: "Food Menu: Browse, Filter, and Add Items to Your Cart"
 sidebarTitle: "Food Menu"
 description: "Explore how the food menu fetches items from the backend, filters them by category, and displays interactive food cards to customers."
 ---
@@ -141,13 +141,13 @@ A successful call to `GET /api/food/list` returns:
 
 Food images are stored in `backend/uploads/` at the time an item is added. They are served as static files at:
 
-```
+```text
 GET /images/:filename
 ```
 
 For example, an item with `image: "1713578089412food_1.png"` resolves to:
 
-```
+```text
 http://localhost:3000/images/1713578089412food_1.png
 ```
 

@@ -1,5 +1,5 @@
 ---
-title: "Cart and Checkout: Add Items and Pay with Stripe"
+title: "Cart and Checkout: Place Orders and Pay with Stripe"
 sidebarTitle: "Cart & Checkout"
 description: "Learn how the cart state is managed in StoreContext, how totals are calculated, and how orders flow through Stripe's hosted checkout."
 ---
@@ -80,7 +80,7 @@ const getTotalCartAmount = () => {
 };
 ```
 
-Clicking **PROCEED TO CHECKOUT** navigates to `/order`. Unauthenticated users are redirected back to `/cart`.
+Clicking **PROCEED TO CHECKOUT** navigates to `/order`. Unauthenticated users are redirected back to `/cart`, as are users who reach `/order` with an empty cart.
 
 ## PlaceOrder Page
 
@@ -128,7 +128,7 @@ Clicking **PROCEED TO PAYMENT** submits the form and calls the backend to create
   <Step title="Stripe redirects back">
     After the customer completes or cancels payment, Stripe redirects to:
 
-    ```
+    ```text
     /verify?success=true&orderId=<id>    ← payment completed
     /verify?success=false&orderId=<id>   ← payment cancelled
     ```

@@ -1,7 +1,7 @@
 ---
-title: "Configure Stripe Payments in Food Delivery App"
+title: "Stripe Checkout Payment Setup for the Food Delivery App"
 sidebarTitle: "Stripe Payments"
-description: "Set up Stripe Checkout in the Food Delivery App to securely accept payments, with a full walkthrough of the hosted checkout flow and order verification logic."
+description: "Set up Stripe Checkout in the Food Delivery App, including test keys, the hosted payment flow, line-item construction, and order verification."
 ---
 
 The Food Delivery App processes payments through [Stripe Checkout](https://stripe.com/docs/payments/checkout) — a Stripe-hosted payment page that handles all card entry and processing. The app server never receives or stores raw card data; it only creates a Checkout session and then verifies the result after Stripe redirects the customer back. This approach keeps the integration PCI-compliant with minimal effort and no card-handling code on your server.

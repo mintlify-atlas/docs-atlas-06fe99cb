@@ -1,7 +1,7 @@
 ---
-title: "Authenticate API Requests with JWT Tokens"
+title: "Food Delivery API Authentication and JWT Token Guide"
 sidebarTitle: "Authentication"
-description: "Learn how the Food Delivery API issues and verifies JWT tokens for secure access to protected cart and order endpoints."
+description: "Complete guide to Food Delivery API authentication: register users, log in, receive JWTs, and secure cart and order endpoints with the token header."
 ---
 
 The API uses JSON Web Tokens (JWT) to protect user-specific resources. A token is issued when a user registers or logs in, and must be included as a `token` header on every request that touches private data — such as the cart or order endpoints. Requests that omit a valid token are rejected before they reach the route handler.

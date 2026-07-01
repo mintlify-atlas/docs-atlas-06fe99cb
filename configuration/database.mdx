@@ -1,7 +1,7 @@
 ---
-title: "Connect Food Delivery App to MongoDB"
+title: "MongoDB Database Setup for the Food Delivery Backend"
 sidebarTitle: "Database"
-description: "Learn how to configure MongoDB for the Food Delivery App, covering both local MongoDB Community and MongoDB Atlas, plus a reference for all Mongoose data models."
+description: "Configure MongoDB for the Food Delivery App using local Community Server or Atlas, with connection setup, Mongoose models, and schema details."
 ---
 
 The Food Delivery App uses [MongoDB](https://www.mongodb.com/) as its primary data store, accessed through the [Mongoose](https://mongoosejs.com/) ODM. All three data collections — food items, users, and orders — are defined as Mongoose schemas in the `backend/models/` directory. Before the server can handle any requests, a valid `MONGODB_URI` must be present in `backend/.env` and the database must be reachable. If the connection fails on startup, the process exits immediately to prevent the app from running in a broken state.
@@ -77,7 +77,7 @@ The connection string is read from `process.env.MONGODB_URI`, which is populated
 
     Click **Connect → Drivers**, select **Node.js**, and copy the connection string. It will look like:
 
-    ```
+    ```text
     mongodb+srv://<user>:<password>@cluster0.xxxxx.mongodb.net/?retryWrites=true&w=majority
     ```
 

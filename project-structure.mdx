@@ -107,11 +107,15 @@ The `frontend` sub-project is the customer-facing React 18 SPA scaffolded with V
 | `removeFromCart(itemId)` | `Function` | Decrements the local count and calls `POST /api/cart/remove` when authenticated. |
 | `getTotalCartAmount()` | `Function` | Iterates `cartItems`, looks up prices from `food_list`, and returns the running total. |
 | `token` / `setToken` | `string / Function` | The JWT string. Persisted to `localStorage` on login and rehydrated on page load. |
-| `url` | `string` | Base URL for the backend API (`http://localhost:3000` by default — update to match your backend port). |
+| `url` | `string` | Base URL for the backend API. Hardcoded to `http://localhost:4000` in the source — must match the port your backend is running on. |
 
 <Note>
   On component mount, `StoreContext` fetches the full food list and, if a token is found in `localStorage`, also rehydrates the cart from the backend. This means a user's cart survives a page refresh.
 </Note>
+
+<Warning>
+  The `url` constant in both `frontend/src/context/StoreContext.jsx` and `admin/src/App.jsx` must be set to `http://localhost:4000` to match the backend's default port. If your backend is running on a different port (set via the `PORT` environment variable), update this value accordingly in both files before starting the frontend and admin apps.
+</Warning>
 
 ### `src/pages/`
 

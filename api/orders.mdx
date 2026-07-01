@@ -1,5 +1,5 @@
 ---
-title: "Orders API: Place, Verify, and Track Orders"
+title: "Orders API: Place, Verify, and Track Food Delivery"
 sidebarTitle: "Orders"
 description: "Endpoints to place orders via Stripe Checkout, verify payment, fetch user order history, and manage order status through the admin panel."
 ---
@@ -13,7 +13,7 @@ The Orders API handles the full order lifecycle from placement through payment v
 Places a new order for the authenticated user. The controller saves the order to MongoDB, clears the user's cart, builds a Stripe Checkout session from the supplied items plus a fixed ₹2 delivery charge, and returns the hosted Stripe session URL. The client should redirect the user to that URL to complete payment.
 
 <Note>
-  The `amount` field in the request body should equal the sum of `(item.price × item.quantity)` for all items **plus** ₹2 for the delivery charge that Stripe will also add as a separate line item.
+  The `amount` field is stored in MongoDB exactly as supplied. The controller independently adds a ₹2 delivery charge as a separate Stripe line item — you do not need to include it in `amount`. Typically the frontend sends the sum of `(item.price × item.quantity)` for all items.
 </Note>
 
 ### Request Headers
@@ -41,7 +41,7 @@ Places a new order for the authenticated user. The controller saves the order to
 </ParamField>
 
 <ParamField body="amount" type="number" required>
-  Total order amount in INR, including the ₹2 delivery fee.
+  Total order amount in INR. This value is stored as-is in MongoDB. The ₹2 delivery charge is added to the Stripe session separately and does not need to be included here.
 </ParamField>
 
 <ParamField body="address" type="object" required>
@@ -88,7 +88,7 @@ curl -X POST http://localhost:4000/api/order/place \
       { "name": "Caesar Salad", "price": 199, "quantity": 2 },
       { "name": "Garlic Bread",  "price": 89,  "quantity": 1 }
     ],
-    "amount": 489,
+    "amount": 487,
     "address": {
       "firstName": "Rohan",
       "lastName": "Sharma",
@@ -181,7 +181,7 @@ Send an empty JSON object.
     <ResponseField name="_id" type="string">MongoDB ObjectId of the order.</ResponseField>
     <ResponseField name="userId" type="string">ID of the user who placed the order.</ResponseField>
     <ResponseField name="items" type="array">Array of ordered items, each with `name`, `price`, and `quantity`.</ResponseField>
-    <ResponseField name="amount" type="number">Total order amount in INR including delivery.</ResponseField>
+    <ResponseField name="amount" type="number">Total order amount in INR as submitted when the order was placed.</ResponseField>
     <ResponseField name="address" type="object">Delivery address object.</ResponseField>
     <ResponseField name="status" type="string">
       Current order status. One of `"Food Processing"`, `"Out for delivery"`, or `"Delivered"`. Defaults to `"Food Processing"` on creation.
@@ -314,7 +314,7 @@ curl -X POST http://localhost:4000/api/order/status \
 
 Every order begins in the **Food Processing** state the moment it is created. An admin uses the `/api/order/status` endpoint to advance it through the pipeline. The three states flow in sequence:
 
-```
+```text
 Food Processing  ──▶  Out for delivery  ──▶  Delivered
 ```
 
